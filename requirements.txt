@@ -2,3 +2,5 @@ lark-oapi>=1.4.0
 feedparser>=6.0.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
+trafilatura>=2.0.0
+openai>=2.0.0
