@@ -1,0 +1,32 @@
+name: Daily News Digest
+
+on:
+  schedule:
+    # 08:07 UTC = 16:07 Beijing time
+    - cron: '7 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run news aggregator
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          GH_TRENDING_TOKEN: ${{ secrets.GH_TRENDING_TOKEN }}
+        run: python -m src.main
