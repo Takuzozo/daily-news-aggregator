@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import sqlite3
 import os
@@ -7,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from src import config
 
 logger = logging.getLogger(__name__)
+
+MONTHLY_DOCS_FILE = os.path.join(config.DATA_DIR, "monthly_docs.json")
 
 
 def _ensure_db() -> None:
@@ -31,6 +34,28 @@ def _get_conn() -> sqlite3.Connection:
     )
     conn.commit()
     return conn
+
+
+def _read_monthly_docs_file() -> dict:
+    """Read monthly docs from JSON file (persisted in repo across CI runs)."""
+    if not os.path.exists(MONTHLY_DOCS_FILE):
+        return {}
+    try:
+        with open(MONTHLY_DOCS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        logger.warning("Failed to read monthly_docs.json", exc_info=True)
+        return {}
+
+
+def _write_monthly_docs_file(data: dict) -> None:
+    """Write monthly docs to JSON file."""
+    _ensure_db()
+    try:
+        with open(MONTHLY_DOCS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.warning("Failed to write monthly_docs.json", exc_info=True)
 
 
 def is_seen(url: str) -> bool:
@@ -75,21 +100,42 @@ def filter_duplicates(items: list) -> list:
 
 
 def get_monthly_doc(year_month: str) -> tuple[str, str] | None:
-    """Return (document_id, document_url) for the given month, or None."""
+    """Return (document_id, document_url) for the given month, or None.
+
+    Checks JSON file first (persisted in repo), then falls back to SQLite.
+    """
+    # Primary: JSON file (persists across CI runs via repo)
+    docs = _read_monthly_docs_file()
+    if year_month in docs:
+        entry = docs[year_month]
+        return (entry["document_id"], entry["document_url"])
+
+    # Fallback: SQLite (local dev)
     try:
         conn = _get_conn()
         row = conn.execute(
             "SELECT document_id, document_url FROM monthly_docs WHERE year_month = ?",
             (year_month,),
         ).fetchone()
-        return (row[0], row[1]) if row else None
+        if row:
+            # Sync to JSON file
+            docs[year_month] = {"document_id": row[0], "document_url": row[1]}
+            _write_monthly_docs_file(docs)
+            return (row[0], row[1])
     except Exception:
-        logger.warning("Failed to get monthly doc for %s", year_month, exc_info=True)
-        return None
+        logger.warning("Failed to get monthly doc from SQLite for %s", year_month, exc_info=True)
+
+    return None
 
 
 def save_monthly_doc(year_month: str, document_id: str, document_url: str) -> None:
-    """Persist the monthly document ID."""
+    """Persist the monthly document ID to both JSON file (primary) and SQLite."""
+    # Write to JSON file
+    docs = _read_monthly_docs_file()
+    docs[year_month] = {"document_id": document_id, "document_url": document_url}
+    _write_monthly_docs_file(docs)
+
+    # Also write to SQLite
     try:
         conn = _get_conn()
         conn.execute(
@@ -97,6 +143,7 @@ def save_monthly_doc(year_month: str, document_id: str, document_url: str) -> No
             (year_month, document_id, document_url),
         )
         conn.commit()
-        logger.info("Saved monthly doc for %s: %s", year_month, document_url)
     except Exception:
-        logger.warning("Failed to save monthly doc for %s", year_month, exc_info=True)
+        logger.warning("Failed to save monthly doc to SQLite for %s", year_month, exc_info=True)
+
+    logger.info("Saved monthly doc for %s: %s", year_month, document_url)

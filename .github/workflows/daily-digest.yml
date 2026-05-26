@@ -6,6 +6,9 @@ on:
     - cron: '7 1 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   aggregate:
     runs-on: ubuntu-latest
@@ -14,6 +17,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Restore dedup database from cache
+        id: db-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/seen_urls.db
+          key: news-dedup-db-${{ github.run_id }}
+          restore-keys: news-dedup-db-
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,3 +42,19 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GH_TRENDING_TOKEN: ${{ secrets.GH_TRENDING_TOKEN }}
         run: python -m src.main
+
+      - name: Save dedup database to cache
+        uses: actions/cache/save@v4
+        with:
+          path: data/seen_urls.db
+          key: news-dedup-db-${{ github.run_id }}
+
+      - name: Commit monthly doc tracking file
+        run: |
+          git config user.name "Daily News Bot"
+          git config user.email "bot@news-digest.dev"
+          if ! git diff --quiet data/monthly_docs.json; then
+            git add data/monthly_docs.json
+            git commit -m "chore: update monthly doc tracking [skip ci]"
+            git push
+          fi
