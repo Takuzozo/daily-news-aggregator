@@ -2,8 +2,9 @@ name: Daily News Digest
 
 on:
   schedule:
-    # 01:07 UTC = 10:07 Tokyo time (JST)
-    - cron: '7 1 * * *'
+    # 19:03 UTC = 04:03 Tokyo (primary). 23:03 UTC = 08:03 Tokyo (fallback).
+    - cron: '3 19 * * *'
+    - cron: '3 23 * * *'
   workflow_dispatch:
 
 permissions:
